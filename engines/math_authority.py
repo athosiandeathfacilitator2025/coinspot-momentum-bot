@@ -11,8 +11,8 @@ This sits ABOVE the voter system. Every cycle it:
 
 Operating modes:
   NORMAL    stress < 0.50   Standard weights. Math engines = 2 voters.
-  ELEVATED  0.50 – 0.70     Math weights scale up. Others scale down.
-  TAKEOVER  stress >= 0.70  Math weights × 8. Standard voters × 0.1.
+  ELEVATED  0.50 - 0.70     Math weights scale up. Others scale down.
+  TAKEOVER  stress >= 0.70  Math weights x8. Standard voters x0.1.
                              MANDATORY or VETO signal issued.
 """
 
@@ -95,9 +95,9 @@ class MathAuthority:
             vm, vs = float(np.mean(volumes)), max(float(np.std(volumes)), 1e-9)
             norm_x = (local_price - pm) / ps
             norm_y = (volume_now  - vm) / vs
-            ec         = evaluate_elliptic_point(norm_x, norm_y)
-            snap_prob  = ec["snap_prob"]
-            ec_fit     = fit_elliptic_curve(prices, volumes)
+            ec            = evaluate_elliptic_point(norm_x, norm_y)
+            snap_prob     = ec["snap_prob"]
+            ec_fit        = fit_elliptic_curve(prices, volumes)
             is_structured = ec_fit["is_structured"]
 
         K       = gaussian_curvature_K(prices, volumes) if len(prices) >= 5 else 0.0
@@ -107,7 +107,7 @@ class MathAuthority:
         sym     = symmetry_break_index(prices, volumes) if len(prices) >= 5 else {}
         sbi     = sym.get("sbi", 0.0)
 
-        stress  = composite_stress_score(
+        stress = composite_stress_score(
             K=K, snap_prob=snap_prob, deviation_z=dev_z,
             sbi=sbi, gauge_abs=abs(gauge_curv),
         )
@@ -121,9 +121,9 @@ class MathAuthority:
 
         weight_overrides = self._compute_weights(stress, mode)
 
-        signal    = None
-        dtp_pct   = None
-        dtp_price = None
+        signal       = None
+        dtp_pct      = None
+        dtp_price    = None
         reason_parts = [f"stress={stress:.2f} mode={mode}"]
 
         if mode == "TAKEOVER":
@@ -133,6 +133,116 @@ class MathAuthority:
             )
         elif mode == "ELEVATED":
             reason_parts.append(
-                f"ELEVATED: snap={snap_prob:.2f} K={K:.2f} "
-                f"dev={dev_z:.2f} sbi={sbi:.2f} — weight shift active"
+                "ELEVATED: snap=" + str(round(snap_prob, 2)) +
+                " K=" + str(round(K, 2)) +
+                " dev=" + str(round(dev_z, 2)) +
+                " sbi=" + str(round(sbi, 2)) +
+                " weight shift active"
             )
+
+        if entry_price > 0 and is_structured and len(prices) >= 8:
+            pai = point_at_infinity(prices, entry_price)
+            if pai["has_valid_signal"]:
+                dtp_pct   = pai["dynamic_tp_pct"]
+                dtp_price = pai["dynamic_tp_price"]
+                reason_parts.append(
+                    "PoI TP=" + str(round(dtp_pct * 100, 2)) +
+                    "% peak=$" + str(round(pai["projected_peak"], 6)) +
+                    " conf=" + str(round(pai["confidence"], 2))
+                )
+
+        reason   = " | ".join(reason_parts)
+        decision = AuthorityDecision(
+            symbol           = symbol,
+            stress_score     = stress,
+            mode             = mode,
+            signal           = signal,
+            weight_overrides = weight_overrides,
+            dynamic_tp_pct   = dtp_pct,
+            dynamic_tp_price = dtp_price,
+            K                = K,
+            snap_prob        = snap_prob,
+            deviation_z      = dev_z,
+            sbi              = sbi,
+            gauge_curv       = gauge_curv,
+            is_structured    = is_structured,
+            reason           = reason,
+        )
+        self._last_decision[symbol] = decision
+        if mode != "NORMAL":
+            log.info("[%s] %s stress=%.2f signal=%s", symbol, mode, stress, signal)
+        return decision
+
+    def _compute_weights(self, stress: float, mode: str) -> dict:
+        weights = self.base_weights.copy()
+        if mode == "NORMAL":
+            return weights
+        if mode == "ELEVATED":
+            t          = (stress - STRESS_ELEVATED) / (STRESS_TAKEOVER - STRESS_ELEVATED)
+            math_mult  = 1.0 + t * (TAKEOVER_MATH_MULT - 1.0)
+            voter_scale = 1.0 - t * (1.0 - TAKEOVER_VOTER_SCALE)
+            for v in MATH_VOTERS:
+                if v in weights:
+                    weights[v] = weights[v] * math_mult
+            for v in STANDARD_VOTERS:
+                if v in weights:
+                    weights[v] = weights[v] * voter_scale
+            return weights
+        for v in MATH_VOTERS:
+            if v in weights:
+                weights[v] = weights[v] * TAKEOVER_MATH_MULT
+        for v in STANDARD_VOTERS:
+            if v in weights:
+                weights[v] = weights[v] * TAKEOVER_VOTER_SCALE
+        return weights
+
+    def _takeover_signal(self, stress, snap_prob, K, dev_z, dev_dir, sbi,
+                         gauge_curv, is_structured, prices, entry_price) -> tuple:
+        parts       = ["TAKEOVER stress=" + str(round(stress, 2))]
+        in_position = entry_price > 0
+
+        if in_position and sbi > 0.6:
+            parts.append("VETO_SELL: symmetry break sbi=" + str(round(sbi, 2)) + " fuel running out")
+            return "VETO_SELL", parts
+
+        if in_position and dev_dir == "above" and snap_prob > 0.70:
+            parts.append(
+                "VETO_SELL: geodesic overshoot snap=" + str(round(snap_prob, 2)) +
+                " dev=" + str(round(dev_z, 2))
+            )
+            return "VETO_SELL", parts
+
+        if in_position and K > 2.0 and dev_dir == "above":
+            parts.append("VETO_SELL: K spike K=" + str(round(K, 2)) + " at geodesic overshoot")
+            return "VETO_SELL", parts
+
+        if snap_prob > 0.75 and gauge_curv < -0.003 and dev_dir == "below" and is_structured:
+            parts.append(
+                "MANDATORY_BUY: elliptic snap UP + gauge underpriced snap=" +
+                str(round(snap_prob, 2)) + " gauge=" + str(round(gauge_curv, 4))
+            )
+            return "MANDATORY_BUY", parts
+
+        if snap_prob > 0.80 and dev_dir == "below" and not in_position:
+            parts.append(
+                "MANDATORY_BUY: extreme snap below geodesic snap=" + str(round(snap_prob, 2))
+            )
+            return "MANDATORY_BUY", parts
+
+        parts.append(
+            "WEIGHT SHIFT ONLY: ambiguous snap=" + str(round(snap_prob, 2)) +
+            " gauge=" + str(round(gauge_curv, 4)) +
+            " dev_dir=" + dev_dir +
+            " sbi=" + str(round(sbi, 2))
+        )
+        return None, parts
+
+    def get_last_decision(self, symbol: str) -> Optional[AuthorityDecision]:
+        return self._last_decision.get(symbol)
+
+    def reset_symbol(self, symbol: str):
+        self._price_hist[symbol].clear()
+        self._volume_hist[symbol].clear()
+        if symbol in self._last_decision:
+            del self._last_decision[symbol]
+        log.info("[%s] Math authority reset", symbol)
