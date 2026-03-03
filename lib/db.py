@@ -1,6 +1,5 @@
 """
 lib/db.py — Unified database layer (SQLAlchemy + PostgreSQL/SQLite).
-Replaces the old Supabase client. All tables created on first run.
 """
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -13,7 +12,6 @@ def _make_engine(database_url: str):
 
 
 class Database:
-    """High-level DB helpers used by bot.py."""
 
     def __init__(self, database_url: str):
         self.engine  = _make_engine(database_url)
@@ -27,7 +25,6 @@ class Database:
         return self.Session()
 
     def init_db(self):
-        """Create all tables if they don't exist."""
         with self.engine.connect() as conn:
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS open_positions (
@@ -42,7 +39,7 @@ class Database:
             """))
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS trade_logs (
-                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id         SERIAL PRIMARY KEY,
                     time       TEXT NOT NULL,
                     coin       TEXT NOT NULL,
                     action     TEXT NOT NULL,
@@ -56,14 +53,14 @@ class Database:
             """))
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS equity_curve (
-                    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id        SERIAL PRIMARY KEY,
                     timestamp TEXT NOT NULL,
                     equity    REAL NOT NULL
                 )
             """))
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS bot_thoughts (
-                    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id        SERIAL PRIMARY KEY,
                     timestamp TEXT NOT NULL,
                     category  TEXT NOT NULL,
                     content   TEXT NOT NULL
@@ -71,7 +68,7 @@ class Database:
             """))
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS pattern_trades (
-                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id         SERIAL PRIMARY KEY,
                     timestamp  TEXT NOT NULL,
                     coin       TEXT,
                     regime     TEXT,
@@ -108,7 +105,9 @@ class Database:
 
     def close_position(self, coin: str):
         with self.engine.connect() as conn:
-            conn.execute(text("DELETE FROM open_positions WHERE coin=:coin"), {"coin": coin})
+            conn.execute(text(
+                "DELETE FROM open_positions WHERE coin=:coin"
+            ), {"coin": coin})
             conn.commit()
 
     def get_open_positions(self) -> list:
