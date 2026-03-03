@@ -1,7 +1,7 @@
 # ═══════════════════════════════════════════════════════════════════
 #  APEX COINSPOT BOT — CONFIGURATION (Single Source of Truth)
 # ═══════════════════════════════════════════════════════════════════
-#  ⚠️  DO NOT PUT API KEYS HERE — set in Render → Environment:
+#  DO NOT PUT API KEYS HERE — set in Render Environment:
 #    COINSPOT_API_KEY, COINSPOT_API_SECRET, DATABASE_URL
 
 # ── Coins to trade (CoinGecko IDs) ───────────────────────────────
@@ -63,12 +63,18 @@ weights:
   gauge:     1.0
   geometric: 1.0
 
-# ── Math engine thresholds ────────────────────────────────────────
+# ── Gauge engine ──────────────────────────────────────────────────
 gauge:
   curvature_buy_threshold:  -0.003
   curvature_sell_threshold:  0.003
   cache_ttl:                 60
 
+# ── Geometric engine ──────────────────────────────────────────────
 geometric:
   snap_prob_threshold: 0.65
   history_len:         30
+
+# ── Math Authority ────────────────────────────────────────────────
+math_authority:
+  takeover_threshold: 0.70
+  elevated_threshold: 0.50
