@@ -1,0 +1,74 @@
+# ═══════════════════════════════════════════════════════════════════
+#  APEX COINSPOT BOT — CONFIGURATION (Single Source of Truth)
+# ═══════════════════════════════════════════════════════════════════
+#  ⚠️  DO NOT PUT API KEYS HERE — set in Render → Environment:
+#    COINSPOT_API_KEY, COINSPOT_API_SECRET, DATABASE_URL
+
+# ── Coins to trade (CoinGecko IDs) ───────────────────────────────
+trading_pairs:
+  - bitcoin
+  - ethereum
+  - solana
+  - ripple
+  - dogecoin
+  - cardano
+  - litecoin
+  - dent
+  - defichain
+
+# ── Risk ──────────────────────────────────────────────────────────
+max_trade_aud:        100.0
+max_positions:        5
+max_drawdown_pct:     5.0
+max_exposure_pct:     0.80
+simulate:             false
+
+# ── Daily targets ─────────────────────────────────────────────────
+daily_target_pct:     5.0
+
+# ── Take profit / Stop loss (gross %) ────────────────────────────
+take_profit_pct:      0.8
+stop_loss_pct:        0.8
+
+# ── Trailing stop ─────────────────────────────────────────────────
+trailing_enabled:     true
+trailing_buffer:      0.005
+
+# ── Limit order entry ─────────────────────────────────────────────
+limit_order_discount: 0.003
+limit_order_timeout:  45
+
+# ── Max hold time ─────────────────────────────────────────────────
+max_hold_minutes:     120
+
+# ── CoinGecko rate limiting ───────────────────────────────────────
+market_cache_ttl:     90
+
+# ── Filters ───────────────────────────────────────────────────────
+hourly_potential_min: 0.4
+min_import_aud:       1.0
+
+# ── Voting ────────────────────────────────────────────────────────
+voting:
+  net_score_threshold: 1.0
+
+# ── Voter weights ─────────────────────────────────────────────────
+weights:
+  rule:      0.8
+  ta:        1.2
+  ml:        0.8
+  market:    0.8
+  rl:        0.6
+  history:   2.0
+  gauge:     1.0
+  geometric: 1.0
+
+# ── Math engine thresholds ────────────────────────────────────────
+gauge:
+  curvature_buy_threshold:  -0.003
+  curvature_sell_threshold:  0.003
+  cache_ttl:                 60
+
+geometric:
+  snap_prob_threshold: 0.65
+  history_len:         30
