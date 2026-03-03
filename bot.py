@@ -262,3 +262,204 @@ class ApexBot:
             price = price_map.get(coin, 0.0)
             if price <= 0:
                 try:
+                    ticker = self.exchange.fetch_ticker(coin + "/AUD")
+                    price  = float(ticker["last"] or 0)
+                except Exception:
+                    continue
+            if price <= 0 or entry <= 0:
+                continue
+
+            gross   = (price - entry) / entry
+            net_pnl = gross - FEE_ROUNDTRIP
+
+            if gross > pos.get("highest_pnl", 0.0):
+                pos["highest_pnl"] = gross
+                if trail_on and gross >= tp_cfg * 0.5:
+                    pos["trail_stop"] = gross - trail_b
+                self.db.update_position_pnl(coin, pos["highest_pnl"],
+                                            pos.get("trail_stop", -999))
+
+            opened = datetime.fromisoformat(pos["opened_at"])
+            mins_h = (datetime.now(timezone.utc) - opened).total_seconds() / 60
+            pos["hours_held"] = mins_h / 60
+
+            effective_tp = self._dynamic_tp.get(coin, tp_cfg)
+
+            exit_reason = None
+            if net_pnl >= effective_tp:
+                tp_tag = "DynTP" if coin in self._dynamic_tp else "TP"
+                exit_reason = tp_tag + " hit: net=" + str(round(net_pnl * 100, 2)) + "%"
+            elif gross <= -sl_pct:
+                exit_reason = "SL hit: gross=" + str(round(gross * 100, 2)) + "%"
+            elif trail_on and pos.get("trail_stop", -999) > -999 and gross <= pos["trail_stop"]:
+                exit_reason = "Trail stop: gross=" + str(round(gross * 100, 2)) + "%"
+            elif mins_h >= max_min:
+                exit_reason = "Timeout " + str(round(mins_h)) + "min net=" + str(round(net_pnl * 100, 2)) + "%"
+
+            if exit_reason:
+                self._execute_exit(coin, qty, price, net_pnl, exit_reason, pos)
+
+    def _execute_exit(self, coin, qty, price, net_pnl, reason, pos):
+        log.info("EXIT %s: %s", coin, reason)
+        if not self.cfg.get("simulate", False):
+            try:
+                self.exchange.create_market_sell_order(coin + "/AUD", qty)
+            except Exception as e:
+                log.error("SELL %s failed: %s", coin, e)
+                return
+        self.db.log_trade(coin, "SELL", net_pnl * 100, reason)
+        self.db.log_pattern_trade(coin, "NORMAL", net_pnl, net_pnl)
+        self.db.log_thought("TRADE",
+            ("WIN" if net_pnl > 0 else "LOSS") + " " + coin +
+            " net=" + str(round(net_pnl * 100, 2)) + "% | " + reason)
+        self.db.close_position(coin)
+        del self.positions[coin]
+        self._dynamic_tp.pop(coin, None)
+        self.authority.reset_symbol(coin)
+
+    def check_circuit_breaker(self, equity: float) -> bool:
+        if self.daily_start_eq is None:
+            self.daily_start_eq = equity
+            return False
+        max_dd = float(self.cfg.get("max_drawdown_pct", 5.0)) / 100
+        dd = (self.daily_start_eq - equity) / max(self.daily_start_eq, 1)
+        if dd >= max_dd:
+            if not self.circuit_open:
+                self.circuit_open = True
+                self.db.log_thought("SYSTEM", "Circuit breaker: DD=" + str(round(dd * 100, 2)) + "%")
+            return True
+        self.circuit_open = False
+        return False
+
+    def run(self):
+        log.info("Main loop starting")
+        threshold = float(self.cfg.get("voting", {}).get("net_score_threshold", 1.0))
+
+        while True:
+            try:
+                t0 = time.time()
+
+                market = self.fetch_market()
+                if not market:
+                    time.sleep(30)
+                    continue
+
+                market_df = pd.DataFrame(market)
+                regime    = self.detect_regime(market)
+                self.db.log_thought("SCAN",
+                    "Regime:" + regime + " coins:" + str(len(market)) +
+                    " positions:" + str(len(self.positions)))
+
+                try:
+                    bal    = self.exchange.fetch_balance()
+                    equity = float(bal["total"].get("AUD") or 0)
+                    self.db.record_equity(equity)
+                    if self.check_circuit_breaker(equity):
+                        self.check_exits(market)
+                        time.sleep(30)
+                        continue
+                except Exception as e:
+                    log.warning("Balance fetch failed: %s", str(e)[:60])
+
+                self.check_exits(market)
+
+                for row in market:
+                    coin  = str(row.get("symbol") or "").upper()
+                    price = float(row.get("current_price") or 0)
+                    vol   = float(row.get("total_volume")  or 0)
+
+                    self.authority.push(coin, price, vol)
+
+                    in_pos   = coin in self.positions
+                    entry_px = float(self.positions[coin]["entry"]) if in_pos else 0.0
+
+                    decision = self.authority.evaluate(
+                        symbol       = coin,
+                        row          = row,
+                        gauge_engine = self.gauge_engine,
+                        entry_price  = entry_px,
+                    )
+
+                    if decision.mode != "NORMAL":
+                        self.db.log_thought("SYSTEM",
+                            "🌀 " + coin + " " + decision.mode +
+                            " stress=" + str(round(decision.stress_score, 2)) +
+                            " K=" + str(round(decision.K, 2)) +
+                            " snap=" + str(round(decision.snap_prob, 2)) +
+                            " dev=" + str(round(decision.deviation_z, 2)) +
+                            " sbi=" + str(round(decision.sbi, 2)) +
+                            " | " + decision.reason[:120])
+
+                    if in_pos and decision.dynamic_tp_pct is not None:
+                        old = self._dynamic_tp.get(coin)
+                        if old is None or decision.dynamic_tp_pct > old:
+                            self._dynamic_tp[coin] = decision.dynamic_tp_pct
+                            self.db.log_thought("SYSTEM",
+                                "📐 " + coin + " PoI DynTP=" +
+                                str(round(decision.dynamic_tp_pct * 100, 2)) +
+                                "% target=$" + str(round(decision.dynamic_tp_price, 6)))
+
+                    if decision.signal == "MANDATORY_BUY" and not in_pos:
+                        self.db.log_thought("TRADE",
+                            "MANDATORY_BUY " + coin + " | " + decision.reason[:180])
+                        self.try_enter(row, net_score=9.9, reason=decision.reason, forced=True)
+                        continue
+
+                    if decision.signal == "VETO_SELL" and in_pos:
+                        self.force_exit(coin, price, decision.reason)
+                        continue
+
+                    if in_pos:
+                        continue
+
+                    if detect_anomaly(row):
+                        self.db.log_thought("SKIP", coin + ": anomaly guard")
+                        continue
+
+                    min_pot = float(self.cfg.get("hourly_potential_min", 0.0))
+                    if min_pot > 0:
+                        h  = float(row.get("high_24h")      or 0)
+                        l  = float(row.get("low_24h")       or 0)
+                        p  = float(row.get("current_price") or 1)
+                        hr = ((h - l) / p * 100 / 24) if p > 0 else 0
+                        if hr < min_pot:
+                            self.db.log_thought("SKIP",
+                                coin + ": hourly_range=" + str(round(hr, 3)) +
+                                "% < " + str(min_pot) + "%")
+                            continue
+
+                    net_score, summary, hard_vetoed = self.run_voters(
+                        row, regime, market_df,
+                        weight_overrides=decision.weight_overrides,
+                    )
+
+                    mode_tag = " [" + decision.mode + "]" if decision.mode != "NORMAL" else ""
+                    self.db.log_thought("VOTE",
+                        coin + mode_tag + ": " + summary +
+                        " stress=" + str(round(decision.stress_score, 2)))
+
+                    if hard_vetoed:
+                        continue
+
+                    if net_score >= threshold:
+                        self.try_enter(row, net_score, summary)
+                    else:
+                        self.db.log_thought("SKIP",
+                            coin + ": score=" + str(round(net_score, 2)) +
+                            " < " + str(threshold))
+
+                elapsed = time.time() - t0
+                time.sleep(max(0, 30 - elapsed))
+
+            except KeyboardInterrupt:
+                log.info("Shutdown")
+                break
+            except Exception as e:
+                log.error("Cycle error: %s", traceback.format_exc()[:400])
+                self.db.log_thought("ERROR", "Cycle: " + str(e)[:200])
+                time.sleep(10)
+
+
+if __name__ == "__main__":
+    bot = ApexBot()
+    bot.run()
