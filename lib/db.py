@@ -6,8 +6,9 @@ IMPORTANT DEPLOYMENT NOTE:
   clean deploy. They wipe the old broken schema (AUTOINCREMENT) and
   recreate with correct PostgreSQL SERIAL syntax.
 
-  After first successful deploy — remove the DROP TABLE lines so that
-  trade history is preserved across future restarts.
+  After first successful deploy — remove the DROP TABLE lines and
+  replace init_db() with the permanent version so trade history is
+  preserved across future restarts.
 """
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -54,8 +55,8 @@ class Database:
     def init_db(self):
         with self.engine.connect() as conn:
             # ── ONE-TIME SCHEMA FIX ──────────────────────────────────────────
-            # Drops old tables that were created with SQLite AUTOINCREMENT
-            # syntax which PostgreSQL rejects. Remove these DROP lines after
+            # Drops old tables created with SQLite AUTOINCREMENT syntax
+            # which PostgreSQL rejects. Remove these DROP lines after
             # first successful deploy to preserve trade history.
             conn.execute(text("DROP TABLE IF EXISTS open_positions CASCADE"))
             conn.execute(text("DROP TABLE IF EXISTS trade_logs CASCADE"))
