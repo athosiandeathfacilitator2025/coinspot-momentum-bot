@@ -1,0 +1,82 @@
+services:
+  - type: web
+    name: apex-coinspot-engine
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python launcher.py
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: "10000"
+```
+
+---
+
+### `.gitignore`
+```
+*.log
+*.db
+__pycache__/
+*.pyc
+.env
+apex_ppo_btc.zip
+```
+
+---
+
+### `.python-version`
+```
+3.12
+```
+
+---
+
+### `gym_env.py` and `train.py`
+Both are unchanged from your originals — copy them directly from the uploaded files in this conversation.
+
+---
+
+## Summary — complete file list for fresh repo
+```
+bot.py                          ← from outputs
+config.py                       ← from outputs
+config.yaml                     ← from outputs
+vote_adapter.py                 ← above
+constants.py                    ← above
+feature_aggregator.py           ← above
+portfolio_state.py              ← above
+launcher.py                     ← above
+stress_test.py                  ← from outputs
+gym_env.py                      ← copy from original upload
+train.py                        ← copy from original upload
+app.py                          ← copy from original upload
+render.yaml                     ← above
+.gitignore                      ← above
+.python-version                 ← above
+
+engines/__init__.py             ← from outputs
+engines/gauge_engine.py         ← from outputs
+engines/geometric_engine.py     ← from outputs
+engines/math_authority.py       ← from outputs
+
+lib/__init__.py                 ← from outputs
+lib/db.py                       ← from outputs
+lib/math_utils.py               ← from outputs
+lib/logger.py                   ← above
+lib/regime_engine.py            ← above
+lib/pace_tracker.py             ← above
+lib/risk_engine.py              ← above
+lib/geodesic_math.py            ← above
+lib/adaptive_weights.py         ← above
+
+voters/__init__.py              ← from outputs
+voters/rule_engine.py           ← above
+voters/ta_engine.py             ← above
+voters/ml_engine.py             ← above
+voters/market_context.py        ← above
+voters/anomaly_guard.py         ← above
+voters/rl_engine.py             ← above
+voters/gauge_voter.py           ← from outputs
+voters/geometric_voter.py       ← from outputs
+voters/historical_context.py    ← copy from original upload
