@@ -133,4 +133,6 @@ class MathAuthority:
             )
         elif mode == "ELEVATED":
             reason_parts.append(
-                f"ELEVATED: snap={snap_p
+                f"ELEVATED: snap={snap_prob:.2f} K={K:.2f} "
+                f"dev={dev_z:.2f} sbi={sbi:.2f} — weight shift active"
+            )
