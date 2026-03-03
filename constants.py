@@ -21,7 +21,6 @@ SYMBOL_TO_CG_ID = {
     "SHIB":  "shiba-inu",
     "DENT":  "dent",
     "AAVE":  "aave",
-    "DFI":   "defichain",
     "RUNE":  "thorchain",
 }
 
