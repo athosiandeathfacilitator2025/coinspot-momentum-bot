@@ -1,0 +1,6 @@
+*.log
+*.db
+__pycache__/
+*.pyc
+.env
+apex_ppo_btc.zip
