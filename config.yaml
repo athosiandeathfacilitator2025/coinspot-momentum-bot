@@ -14,7 +14,6 @@ trading_pairs:
   - cardano
   - litecoin
   - dent
-  - defichain
 
 # ── Risk ──────────────────────────────────────────────────────────
 max_trade_aud:        100.0
