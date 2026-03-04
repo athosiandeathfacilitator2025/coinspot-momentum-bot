@@ -1,14 +1,9 @@
 """
 lib/db.py — Unified database layer (SQLAlchemy + Supabase PostgreSQL)
 
-IMPORTANT DEPLOYMENT NOTE:
-  The DROP TABLE statements in init_db() are intentional for the FIRST
-  clean deploy. They wipe the old broken schema (AUTOINCREMENT) and
-  recreate with correct PostgreSQL SERIAL syntax.
-
-  After first successful deploy — remove the DROP TABLE lines and
-  replace init_db() with the permanent version so trade history is
-  preserved across future restarts.
+Schema uses PostgreSQL SERIAL for auto-increment primary keys.
+Tables are created with IF NOT EXISTS — safe to restart indefinitely.
+Trade history is preserved across all future restarts.
 """
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -54,17 +49,6 @@ class Database:
 
     def init_db(self):
         with self.engine.connect() as conn:
-            # ── ONE-TIME SCHEMA FIX ──────────────────────────────────────────
-            # Drops old tables created with SQLite AUTOINCREMENT syntax
-            # which PostgreSQL rejects. Remove these DROP lines after
-            # first successful deploy to preserve trade history.
-            conn.execute(text("DROP TABLE IF EXISTS open_positions CASCADE"))
-            conn.execute(text("DROP TABLE IF EXISTS trade_logs CASCADE"))
-            conn.execute(text("DROP TABLE IF EXISTS equity_curve CASCADE"))
-            conn.execute(text("DROP TABLE IF EXISTS bot_thoughts CASCADE"))
-            conn.execute(text("DROP TABLE IF EXISTS pattern_trades CASCADE"))
-            # ── END ONE-TIME FIX ─────────────────────────────────────────────
-
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS open_positions (
                     coin        TEXT PRIMARY KEY,
