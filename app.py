@@ -12,6 +12,8 @@ Includes:
 
 import os
 import time
+from datetime import datetime, timezone
+
 import ccxt
 import requests
 import pandas as pd
@@ -88,6 +90,9 @@ st.title("🤖  Apex Coinspot AI Terminal")
 
 # ── Top metrics ───────────────────────────────────────────────────────────────
 try:
+    # today's date prefix — timestamps stored as ISO text e.g. "2026-03-04T01:47:..."
+    today_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d") + "%"
+
     with db_engine.connect() as conn:
         latest   = conn.execute(text("SELECT equity FROM equity_curve ORDER BY timestamp DESC LIMIT 1")).fetchone()
         earliest = conn.execute(text("SELECT equity FROM equity_curve ORDER BY timestamp ASC  LIMIT 1")).fetchone()
@@ -96,11 +101,11 @@ try:
 
         math_res = conn.execute(text("""
             SELECT
-                SUM(CASE WHEN content LIKE '%🌀%' THEN 1 ELSE 0 END) as gauge_count,
-                SUM(CASE WHEN content LIKE '%📐%' OR content LIKE '%GEOM EXIT%' THEN 1 ELSE 0 END) as geom_count
+                SUM(CASE WHEN content LIKE '%🌀%' THEN 1 ELSE 0 END)                        AS gauge_count,
+                SUM(CASE WHEN content LIKE '%📐%' OR content LIKE '%GEOM EXIT%' THEN 1 ELSE 0 END) AS geom_count
             FROM bot_thoughts
-            WHERE timestamp >= date('now')
-        """)).fetchone()
+            WHERE timestamp LIKE :today
+        """), {"today": today_prefix}).fetchone()
 
     current_eq  = float(latest[0])   if latest   else 0.0
     start_eq    = float(earliest[0]) if earliest else current_eq
