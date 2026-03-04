@@ -1,5 +1,14 @@
-# voters/market_context.py
+"""
+voters/market_context.py — Tier 4: Market context voter.
+
+bot.py calls:  market_vote(row, regime, market_df)
+
+regime comes from RegimeEngine.detect() which returns "BULL"/"BEAR"/"NEUTRAL".
+"""
 import pandas as pd
+import logging
+
+log = logging.getLogger("MarketVoter")
 
 
 def market_vote(row, regime: str, df: pd.DataFrame = None) -> dict:
@@ -11,15 +20,18 @@ def market_vote(row, regime: str, df: pd.DataFrame = None) -> dict:
         vol_ratio  = volume / max(market_cap, 1)
         signals    = []
 
-        if regime == "bull" and change_24h > 1.0:
-            signals.append(("buy",  0.70, f"aligned with bull regime change={change_24h:.1f}%"))
-        elif regime == "bear" and change_24h < -1.0:
-            signals.append(("sell", 0.70, f"aligned with bear regime change={change_24h:.1f}%"))
+        regime_up = regime.upper()   # normalise — RegimeEngine returns uppercase
+
+        if regime_up == "BULL" and change_24h > 1.0:
+            signals.append(("buy",  0.70, f"aligned with BULL regime change={change_24h:.1f}%"))
+        elif regime_up == "BEAR" and change_24h < -1.0:
+            signals.append(("sell", 0.70, f"aligned with BEAR regime change={change_24h:.1f}%"))
         else:
-            signals.append(("hold", 0.55, "range/neutral regime"))
+            signals.append(("hold", 0.55, f"regime={regime} neutral"))
 
         if vol_ratio > 0.08:
-            signals.append(("buy" if change_24h > 0 else "sell", 0.75 if change_24h > 0 else 0.70,
+            signals.append(("buy" if change_24h > 0 else "sell",
+                            0.75 if change_24h > 0 else 0.70,
                             f"volume spike vol_ratio={vol_ratio:.3f}"))
         elif vol_ratio < 0.005:
             signals.append(("hold", 0.52, f"very low volume vol_ratio={vol_ratio:.4f}"))
@@ -59,5 +71,7 @@ def market_vote(row, regime: str, df: pd.DataFrame = None) -> dict:
                     "reason": f"MKT SELL: {best[2]}"}
         return {"action": "hold", "confidence": 0.55,
                 "reason": f"MKT HOLD: mixed ({len(signals)} signals)"}
+
     except Exception as e:
-        return {"action": "hold", "confidence": 0.5, "reason": f"MKT error: {str(e)[:60]}"}
+        return {"action": "hold", "confidence": 0.5,
+                "reason": f"MKT error: {str(e)[:60]}"}
