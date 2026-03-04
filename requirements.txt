@@ -1,11 +1,3 @@
-# Apex Coinspot Bot — Render Production Dependencies
-# ────────────────────────────────────────────────────
-# NOTE: stable-baselines3 / torch are NOT listed here.
-# PyTorch is ~750MB — larger than Render free tier RAM.
-# The RL voter handles this gracefully: if SB3 is missing,
-# rl.ready = False and the bot runs on 7 voters instead of 8.
-# To enable RL: upgrade to Render Starter ($7/mo) then run train.py.
-
 streamlit>=1.32.0
 pandas>=2.0.0
 requests>=2.31.0
